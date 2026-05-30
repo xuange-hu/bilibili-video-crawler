@@ -1,0 +1,5 @@
+requests==2.31.0
+BeautifulSoup4==4.12.2
+click==8.1.7
+python-dotenv==1.0.0
+pieces==3.6.0
