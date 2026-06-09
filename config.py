@@ -23,14 +23,17 @@ class Config:
     def _get_default_config(self):
         """获取默认配置"""
         return {
-            "request_timeout": 10,
-            "request_delay": 1,
-            "max_retries": 3,
+            "request_timeout": 15,
+            "request_delay": 2,
+            "max_retries": 5,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "download_dir": "./videos",
             "database_path": "./data.db",
             "log_level": "INFO",
-            "log_dir": "./logs"
+            "log_dir": "./logs",
+            "cookie": "",
+            "use_proxy": False,
+            "proxy_url": ""
         }
     
     def get(self, key, default=None):
