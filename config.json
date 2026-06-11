@@ -9,5 +9,6 @@
   "log_dir": "./logs",
   "cookie": "",
   "use_proxy": false,
-  "proxy_url": ""
+  "proxy_url": "",
+  "use_wbi_sign": true
 }
