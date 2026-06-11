@@ -30,9 +30,9 @@ class BilibiliCrawler:
             img_key, sub_key = wbi_sign.fetch_keys()
             if img_key and sub_key:
                 wbi_sign.update_keys(img_key, sub_key)
-                self.logger.info("✓ WBI签名密钥获取成功")
+                self.logger.info(f"✓ WBI签名密钥获取成功 (img_key: {img_key[:8]}..., sub_key: {sub_key[:8]}...)")
             else:
-                self.logger.warning("⚠ 无法获取WBI签名密钥，某些API可能失败")
+                self.logger.warning("⚠ 无法获取WBI签名密钥，API请求可能失败")
         except Exception as e:
             self.logger.warning(f"⚠ WBI签名初始化失败: {e}")
     
@@ -40,7 +40,7 @@ class BilibiliCrawler:
         """创建requests会话，配置反爬虫应对策略"""
         session = requests.Session()
         
-        # 更完整的请求头，模拟最新浏览器
+        # 完整的请求头，模拟真实浏览器
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Referer': 'https://www.bilibili.com/',
@@ -58,7 +58,6 @@ class BilibiliCrawler:
             'Sec-Fetch-Site': 'same-site',
             'DNT': '1',
             'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
             'X-Requested-With': 'XMLHttpRequest',
         }
         session.headers.update(headers)
@@ -69,7 +68,7 @@ class BilibiliCrawler:
             session.headers.update({'Cookie': cookie})
             self.logger.info("✓ 已加载B站Cookie")
         else:
-            self.logger.warning("⚠ 未配置Cookie，部分功能可能不可用")
+            self.logger.warning("⚠ 未配置Cookie，某些API可能无法访问")
         
         # 配置代理
         if self.config.get('use_proxy'):
@@ -101,7 +100,9 @@ class BilibiliCrawler:
         if self.config.get('use_wbi_sign') and 'api.bilibili.com' in url and method == 'GET':
             if params is None:
                 params = {}
-            params = wbi_sign.sign(params.copy())
+            # 确保是真正需要签名的API
+            if any(api in url for api in ['playurl', 'view', 'search']):
+                params = wbi_sign.sign(params.copy())
         
         for attempt in range(max_retries):
             try:
@@ -115,6 +116,8 @@ class BilibiliCrawler:
                 self.session.headers['User-Agent'] = self._get_random_user_agent()
                 
                 self.logger.debug(f"[{attempt + 1}/{max_retries}] {method} {url}")
+                if params:
+                    self.logger.debug(f"参数: {params}")
                 
                 if method.upper() == 'GET':
                     response = self.session.get(
@@ -136,10 +139,10 @@ class BilibiliCrawler:
                     raise Exception("请求被拒绝(403) - IP被限制或Cookie过期")
                 
                 if response.status_code == 404:
-                    raise Exception("资源不存在或已删除(404)")
+                    raise Exception("资源不存在(404)")
                 
                 if response.status_code == 429:
-                    raise Exception("请求过于频繁(429) - 限流中")
+                    raise Exception("请求过于频繁(429) - 被限流")
                 
                 response.raise_for_status()
                 
@@ -160,10 +163,12 @@ class BilibiliCrawler:
                         elif code == -401:
                             raise Exception(f"Cookie过期({code}) - {message}")
                         elif code == -403:
-                            raise Exception(f"访问被拒绝({code}) - {message}")
+                            raise Exception(f"无权限访问({code}) - {message}")
+                        elif code == -404:
+                            raise Exception(f"资源不存在({code}) - {message}")
                         else:
                             raise Exception(f"API错误({code}) - {message}")
-                except (ValueError, KeyError):
+                except (ValueError, KeyError, TypeError):
                     # 不是JSON响应或不包含code字段，直接返回
                     return response
                 
@@ -172,12 +177,12 @@ class BilibiliCrawler:
             except requests.exceptions.Timeout:
                 self.logger.warning(f"⏱ 请求超时 (第 {attempt + 1}/{max_retries} 次)")
                 if attempt == max_retries - 1:
-                    raise Exception("请求超时 - 网络连接较差或B站服务器响应缓慢")
+                    raise Exception("请求超时 - 网络连接较差")
             
             except requests.exceptions.ConnectionError:
                 self.logger.warning(f"🔌 连接错误 (第 {attempt + 1}/{max_retries} 次)")
                 if attempt == max_retries - 1:
-                    raise Exception("无法连接到B站 - 请检查网络连接")
+                    raise Exception("无法连接B站 - 请检查网络")
             
             except Exception as e:
                 self.logger.warning(f"⚠ 请求失败 (第 {attempt + 1}/{max_retries} 次): {str(e)}")
@@ -185,16 +190,14 @@ class BilibiliCrawler:
                     self.logger.error(f"❌ 请求最终失败: {url}")
                     raise
         
-        raise Exception("未知错误 - 请重试")
+        raise Exception("未知错误")
     
     def _get_random_user_agent(self) -> str:
         """获取随机User-Agent"""
         user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         ]
@@ -203,9 +206,8 @@ class BilibiliCrawler:
     def get_video_info(self, bvid: str) -> Optional[Dict[str, Any]]:
         """获取视频信息"""
         try:
-            self.logger.info(f"正在获取视频信息: {bvid}")
+            self.logger.info(f"📺 正在获取视频信息: {bvid}")
             
-            # 使用新的API端点
             url = "https://api.bilibili.com/x/web-interface/view"
             params = {'bvid': bvid}
             
@@ -214,10 +216,13 @@ class BilibiliCrawler:
             
             if data.get('code') != 0:
                 error_msg = data.get('message', '未知错误')
-                self.logger.error(f"❌ API返回错误: {error_msg}")
+                self.logger.error(f"❌ API返回错误: {error_msg} (code: {data.get('code')})")
                 return None
             
             video_data = data.get('data', {})
+            if not video_data:
+                self.logger.error("❌ 获取视频数据为空")
+                return None
             
             video_info = {
                 'bvid': bvid,
@@ -235,9 +240,12 @@ class BilibiliCrawler:
             }
             
             # 保存到数据库
-            self.db.save_video_info(video_info)
+            try:
+                self.db.save_video_info(video_info)
+            except Exception as db_error:
+                self.logger.warning(f"⚠ 数据库保存失败: {db_error}")
             
-            self.logger.info(f"✓ 获取视频信息成功: {video_info['title']}")
+            self.logger.info(f"✓ 获取成功: {video_info['title'][:50]}...")
             time.sleep(self.config.get('request_delay', 2))
             
             return video_info
@@ -252,7 +260,7 @@ class BilibiliCrawler:
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
         try:
-            self.logger.info(f"📥 正在下载视频: {bvid}")
+            self.logger.info(f"\n📥 开始下载: {bvid}")
             
             # 获取视频信息
             video_info = self.get_video_info(bvid)
@@ -264,24 +272,25 @@ class BilibiliCrawler:
             params = {
                 'bvid': bvid,
                 'qn': 80,  # 清晰度
-                'fourk': 1,
                 'fnver': 0,
-                'fnval': 4048,  # 支持更多格式
+                'fnval': 4048,  # 支持多种格式
             }
             
             response = self._make_request(playback_url, params=params)
             playback_data = response.json()
             
             if playback_data.get('code') != 0:
-                error_msg = f"无法获取下载链接: {playback_data.get('message', '未知错误')}"
+                code = playback_data.get('code')
+                message = playback_data.get('message', '未知错误')
+                error_msg = f"无法获取播放链接: {message} (code: {code})"
                 self.logger.error(f"❌ {error_msg}")
                 
                 # 诊断信息
-                if playback_data.get('code') == -401:
-                    self.logger.error("💡 建议: Cookie已过期，请重新获取")
-                elif playback_data.get('code') == -403:
-                    self.logger.error("💡 建议: 无权限访问，可能需要大会员或特定地区")
-                elif playback_data.get('code') == -4:
+                if code == -401:
+                    self.logger.error("💡 建议: Cookie已过期，请重新获取B站登录Cookie")
+                elif code == -403:
+                    self.logger.error("💡 建议: 无权限访问，可能需要大会员或地域限制")
+                elif code == -4:
                     self.logger.error("💡 建议: 需要登录B站账号")
                 
                 self.db.save_download_record(bvid, status='failed', error_message=error_msg)
@@ -292,7 +301,7 @@ class BilibiliCrawler:
             if not durl:
                 error_msg = "无法获取下载链接 - 视频可能有地域限制或需要特殊权限"
                 self.logger.error(f"❌ {error_msg}")
-                self.logger.debug(f"响应数据: {json.dumps(playback_data, ensure_ascii=False)}")
+                self.logger.debug(f"响应数据: {json.dumps(playback_data, ensure_ascii=False, indent=2)}")
                 self.db.save_download_record(bvid, status='failed', error_message=error_msg)
                 return False
             
@@ -304,10 +313,16 @@ class BilibiliCrawler:
                 file_name = file_name.replace(char, '_')
             
             file_path = os.path.join(output_dir, file_name)
-            video_url = durl[0]['url']
+            video_url = durl[0].get('url', '')
+            
+            if not video_url:
+                error_msg = "下载链接为空"
+                self.logger.error(f"❌ {error_msg}")
+                self.db.save_download_record(bvid, status='failed', error_message=error_msg)
+                return False
             
             self.logger.info(f"📍 保存路径: {file_path}")
-            self.logger.info(f"🔗 下载地址: {video_url[:80]}...")
+            self.logger.info(f"🔗 下载地址: {video_url[:100]}...")
             
             # 下载视频文件
             download_headers = {
@@ -338,8 +353,9 @@ class BilibiliCrawler:
                         # 显示下载进度
                         if total_size > 0:
                             progress = (downloaded_size / total_size) * 100
-                            speed = downloaded_size / (1024 * 1024)  # MB
-                            self.logger.info(f"⏳ 下载进度: {progress:.1f}% ({speed:.1f}MB/{total_size / (1024 * 1024):.1f}MB)")
+                            mb_downloaded = downloaded_size / (1024 * 1024)
+                            mb_total = total_size / (1024 * 1024)
+                            self.logger.info(f"⏳ 进度: {progress:.1f}% ({mb_downloaded:.1f}MB/{mb_total:.1f}MB)")
             
             # 保存下载记录
             file_size = os.path.getsize(file_path)
@@ -350,13 +366,16 @@ class BilibiliCrawler:
                 status='success'
             )
             
-            self.logger.info(f"✅ 视频下载成功: {file_path}")
+            self.logger.info(f"✅ 下载成功: {file_path}")
             return True
         
         except Exception as e:
             error_msg = str(e)
-            self.logger.error(f"❌ 视频下载失败: {error_msg}")
-            self.db.save_download_record(bvid, status='failed', error_message=error_msg)
+            self.logger.error(f"❌ 下载失败: {error_msg}")
+            try:
+                self.db.save_download_record(bvid, status='failed', error_message=error_msg)
+            except:
+                pass
             return False
     
     def batch_download(self, bv_list: List[str], output_dir: str = None) -> Tuple[int, int]:
@@ -365,6 +384,7 @@ class BilibiliCrawler:
         
         success_count = 0
         fail_count = 0
+        total = len([b for b in bv_list if b.strip()])
         
         for i, bvid in enumerate(bv_list, 1):
             bvid = bvid.strip()
@@ -372,7 +392,7 @@ class BilibiliCrawler:
                 continue
             
             try:
-                self.logger.info(f"\n[{i}/{len(bv_list)}] 处理: {bvid}")
+                self.logger.info(f"\n[{i}/{total}] 处理: {bvid}")
                 if self.download_video(bvid, output_dir):
                     success_count += 1
                 else:
@@ -382,13 +402,13 @@ class BilibiliCrawler:
                 fail_count += 1
             
             # 批量下载时增加延迟
-            if i < len(bv_list):
+            if i < total:
                 delay = self.config.get('request_delay', 2) * random.uniform(1.5, 2.5)
                 self.logger.info(f"⏳ 等待 {delay:.1f} 秒...")
                 time.sleep(delay)
         
         self.logger.info(f"\n{'='*60}")
-        self.logger.info(f"✅ 批量下载完成 - 成功: {success_count}, 失败: {fail_count}")
+        self.logger.info(f"✅ 完成! 成功: {success_count}, 失败: {fail_count}")
         self.logger.info(f"{'='*60}")
         
         return success_count, fail_count

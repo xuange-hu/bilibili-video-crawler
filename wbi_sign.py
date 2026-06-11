@@ -14,6 +14,13 @@ import httpx
 class WbiSign:
     """B站 WBI 签名类"""
     
+    # WBI混淆顺序表
+    MIXIN_KEY_ENC_TAB = [
+        46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+        33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+        61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 11, 20, 56, 21, 34, 52, 11, 37,
+    ]
+    
     def __init__(self):
         self.img_key = ""
         self.sub_key = ""
@@ -21,8 +28,15 @@ class WbiSign:
         self.update_interval = 3600  # 1小时更新一次
     
     def _get_mixin_key(self) -> str:
-        """获取混合密钥"""
-        return (self.img_key + self.sub_key)[0:32]
+        """获取混合密钥 - 正确的算法"""
+        # 原始的 img_key + sub_key
+        orig_key = self.img_key + self.sub_key
+        # 根据混淆表重新排列
+        mixin_key = ""
+        for i in self.MIXIN_KEY_ENC_TAB:
+            if i < len(orig_key):
+                mixin_key += orig_key[i]
+        return mixin_key[:32]
     
     def _get_sign(self, data: Dict[str, Any]) -> str:
         """计算签名"""
@@ -87,23 +101,27 @@ class WbiSign:
             response = httpx.get(
                 'https://api.bilibili.com/x/web-interface/nav',
                 headers=headers,
-                timeout=10
+                timeout=10,
+                follow_redirects=True
             )
             
+            response.raise_for_status()
             data = response.json()
             if data.get('code') != 0:
                 return "", ""
             
             wbi_img = data.get('data', {}).get('wbi_img', {})
+            if not wbi_img:
+                return "", ""
             
             # 从图片URL提取img_key
             img_url = wbi_img.get('img_url', '')
-            img_key = re.findall(r'/([a-zA-Z0-9]+)\.png', img_url)
+            img_key = re.findall(r'/([a-zA-Z0-9_-]+)\.png', img_url)
             img_key = img_key[0] if img_key else ""
             
             # 从子图片URL提取sub_key
             sub_url = wbi_img.get('sub_url', '')
-            sub_key = re.findall(r'/([a-zA-Z0-9]+)\.png', sub_url)
+            sub_key = re.findall(r'/([a-zA-Z0-9_-]+)\.png', sub_url)
             sub_key = sub_key[0] if sub_key else ""
             
             return img_key, sub_key
