@@ -335,8 +335,7 @@ class BilibiliCrawler:
                 video_url,
                 headers=download_headers,
                 timeout=30,
-                stream=True,
-                verify=False
+                stream=True
             )
             response.raise_for_status()
             
