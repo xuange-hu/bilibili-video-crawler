@@ -35,4 +35,39 @@ def test_config_example_matches_schema_of_committed_config():
 def test_wbi_sign_importable():
     import wbi_sign  # noqa: F401
 
-    assert hasattr(wbi_sign, "sign"), "wbi_sign 应暴露 sign 函数"
+    assert hasattr(wbi_sign, "sign"), "wbi_sign 应暴露模块级 sign 函数"
+    assert hasattr(wbi_sign, "WbiSign"), "wbi_sign 应暴露 WbiSign 类"
+    assert callable(wbi_sign.sign)
+
+
+def test_mixin_key_is_deterministic_and_32_chars():
+    from wbi_sign import WbiSign
+
+    a = WbiSign()
+    b = WbiSign()
+    a.update_keys("a" * 32, "b" * 32)
+    b.update_keys("a" * 32, "b" * 32)
+    assert a._get_mixin_key() == b._get_mixin_key()
+    assert len(a._get_mixin_key()) == 32
+
+
+def test_sign_without_keys_returns_params_unchanged():
+    from wbi_sign import WbiSign
+
+    s = WbiSign()
+    params = {"foo": "bar"}
+    assert s.sign(params) == {"foo": "bar"}
+
+
+def test_sign_with_keys_adds_wts_and_w_rid():
+    import wbi_sign
+
+    wbi_sign.wbi_sign.update_keys("a" * 32, "b" * 32)
+    try:
+        signed = wbi_sign.sign({"foo": "bar"})
+        assert "wts" in signed
+        assert "w_rid" in signed
+        assert len(signed["w_rid"]) == 64, "w_rid 应为 SHA-256 十六进制摘要"
+    finally:
+        # 复位全局单例，避免影响其他用例
+        wbi_sign.wbi_sign.update_keys("", "")

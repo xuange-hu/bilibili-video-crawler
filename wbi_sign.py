@@ -132,3 +132,22 @@ class WbiSign:
 
 # 全局WBI签名实例
 wbi_sign = WbiSign()
+
+
+def sign(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    模块级便捷签名入口，委托给全局单例 :data:`wbi_sign`。
+
+    与 ``wbi_sign.sign(params)`` 等价：为参数补上 ``wts`` 与 ``w_rid``；
+    当 img_key / sub_key 尚未初始化时原样返回参数，避免调用方额外判空。
+
+    Args:
+        params: 请求参数字典
+
+    Returns:
+        添加了签名的参数字典（入参会被就地修改，调用方需自行传入副本）
+    """
+    return wbi_sign.sign(params)
+
+
+__all__ = ["WbiSign", "wbi_sign", "sign"]
