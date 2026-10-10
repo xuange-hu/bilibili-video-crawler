@@ -373,8 +373,8 @@ class BilibiliCrawler:
             self.logger.error(f"❌ 下载失败: {error_msg}")
             try:
                 self.db.save_download_record(bvid, status='failed', error_message=error_msg)
-            except:
-                pass
+            except Exception as db_err:
+                self.logger.debug("保存失败记录时出错（可忽略）：%s", db_err)
             return False
     
     def batch_download(self, bv_list: List[str], output_dir: str = None) -> Tuple[int, int]:
