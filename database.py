@@ -1,6 +1,7 @@
 import sqlite3
 import json
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from config import Config
 from logger import Logger
 
@@ -63,7 +64,7 @@ class Database:
             self.logger.error(f"数据库初始化失败: {e}")
             raise
     
-    def save_video_info(self, video_info):
+    def save_video_info(self, video_info: Dict[str, Any]) -> bool:
         """保存视频信息"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -98,7 +99,14 @@ class Database:
             self.logger.error(f"视频信息保存失败: {e}")
             return False
     
-    def save_download_record(self, bvid, file_path=None, file_size=None, status='success', error_message=None):
+    def save_download_record(
+        self,
+        bvid: str,
+        file_path: Optional[str] = None,
+        file_size: Optional[int] = None,
+        status: str = "success",
+        error_message: Optional[str] = None,
+    ) -> bool:
         """保存下载记录"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -114,7 +122,8 @@ class Database:
                 file_size,
                 status,
                 error_message,
-                datetime.now() if status == 'success' else None
+                # 显式转为字符串：sqlite3 默认 datetime 适配器自 Python 3.12 起已弃用
+                datetime.now().isoformat(sep=" ") if status == "success" else None
             ))
             
             conn.commit()
@@ -125,7 +134,7 @@ class Database:
             self.logger.error(f"下载记录保存失败: {e}")
             return False
     
-    def get_video_info(self, bvid):
+    def get_video_info(self, bvid: str) -> Optional[Dict[str, Any]]:
         """获取视频信息"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -143,7 +152,7 @@ class Database:
             self.logger.error(f"查询视频信息失败: {e}")
             return None
     
-    def get_all_videos(self):
+    def get_all_videos(self) -> List[Dict[str, Any]]:
         """获取所有视频信息"""
         try:
             conn = sqlite3.connect(self.db_path)
