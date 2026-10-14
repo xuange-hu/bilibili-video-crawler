@@ -30,3 +30,23 @@ jobs:
 
       - name: Run smoke tests
         run: python -m pytest tests -q
+
+  typecheck:
+    # 静态类型门禁：增量式接入，受检文件清单见仓库根 mypy.ini。
+    # 目前覆盖 config / logger / database / wbi_sign，随 crawler.py 拆分推进再扩大。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install mypy
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "mypy==1.*"
+
+      - name: Run mypy
+        run: python -m mypy

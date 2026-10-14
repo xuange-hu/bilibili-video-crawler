@@ -2,6 +2,23 @@
 
 本仓库遵循 [Keep a Changelog](https://keepachangelog.com/) 约定，版本号参考 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-10-15
+
+### Quality
+- 新增静态类型门禁：`mypy.ini` + CI `typecheck` 作业（增量式接入，覆盖
+  config / logger / database / wbi_sign，随 crawler.py 拆分推进再扩大）。
+- `config.py`、`logger.py`、`database.py`、`wbi_sign.py` 补全类型注解。
+- 修复 `wbi_sign.fetch_keys` 中 list/str 变量复用导致的类型冲突（改用独立匹配变量）。
+
+### Fixed
+- **配置文件损坏不再崩溃**：非法 JSON、或顶层不是 JSON 对象时回退默认配置
+  （此前 `self.config.get` 会因非 dict 而崩溃）。
+- **Logger 健壮性**：`log_dir` 缺失时回退 `./logs`（此前 `os.makedirs(None)` 崩溃）；
+  `log_level` 非法回退 INFO；日志目录不可写时退化为仅控制台输出而不抛异常。
+
+### Tests
+- 新增 `tests/test_config_robustness.py`（10 例），测试总数 30 → 40。
+
 ## [0.2.0] - 2026-10-11
 
 ### Security

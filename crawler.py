@@ -11,7 +11,7 @@ from logger import Logger
 from database import Database
 from wbi_sign import wbi_sign
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 class BilibiliCrawler:

@@ -7,7 +7,7 @@ import hashlib
 import time
 import re
 import json
-from typing import Dict, Any
+from typing import Any, Dict, Tuple
 import httpx
 
 
@@ -84,7 +84,7 @@ class WbiSign:
         return params
     
     @staticmethod
-    def fetch_keys() -> tuple:
+    def fetch_keys() -> Tuple[str, str]:
         """
         从B站获取 WBI 密钥
         
@@ -116,13 +116,13 @@ class WbiSign:
             
             # 从图片URL提取img_key
             img_url = wbi_img.get('img_url', '')
-            img_key = re.findall(r'/([a-zA-Z0-9_-]+)\.png', img_url)
-            img_key = img_key[0] if img_key else ""
-            
+            img_matches = re.findall(r'/([a-zA-Z0-9_-]+)\.png', img_url)
+            img_key = img_matches[0] if img_matches else ""
+
             # 从子图片URL提取sub_key
             sub_url = wbi_img.get('sub_url', '')
-            sub_key = re.findall(r'/([a-zA-Z0-9_-]+)\.png', sub_url)
-            sub_key = sub_key[0] if sub_key else ""
+            sub_matches = re.findall(r'/([a-zA-Z0-9_-]+)\.png', sub_url)
+            sub_key = sub_matches[0] if sub_matches else ""
             
             return img_key, sub_key
         except Exception as e:
