@@ -16,8 +16,14 @@
 - **Logger 健壮性**：`log_dir` 缺失时回退 `./logs`（此前 `os.makedirs(None)` 崩溃）；
   `log_level` 非法回退 INFO；日志目录不可写时退化为仅控制台输出而不抛异常。
 
+- **重试策略修正**：403 / 404 / Cookie 过期 / 无权限等**确定性**客户端错误，此前会落进通用
+  `except Exception` 分支被重试满 `max_retries` 次（每次还 sleep 2~5 秒），既白白等待又会在
+  已被封禁的状态下继续施压。现引入 `NonRetryableHTTPError`（立即失败）与
+  `RetryableHTTPError`（429 / API -412 退避重试），两类错误得到区分对待。
+
 ### Tests
-- 新增 `tests/test_config_robustness.py`（10 例），测试总数 30 → 40。
+- 新增 `tests/test_config_robustness.py`（10 例）与 `tests/test_retry_policy.py`（9 例），
+  后者通过统计 `max_retries=3` 下的实际请求次数锁定重试语义。测试总数 30 → 49。
 
 ## [0.2.0] - 2026-10-11
 

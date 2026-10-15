@@ -14,6 +14,17 @@ from wbi_sign import wbi_sign
 __version__ = "0.3.0"
 
 
+class NonRetryableHTTPError(Exception):
+    """不应重试的错误：确定性的客户端错误（403/404、Cookie 过期、无权限…）。
+
+    重试这类请求没有意义——结果不会改变，只会白白等待并可能加重封禁。
+    """
+
+
+class RetryableHTTPError(Exception):
+    """可重试的错误：限流类（HTTP 429 / API -412）。退避后重试是正确应对。"""
+
+
 class BilibiliCrawler:
     """B站视频爬虫类 - 支持现代反爬虫机制"""
     
@@ -138,13 +149,13 @@ class BilibiliCrawler:
                 
                 # 检查HTTP状态码
                 if response.status_code == 403:
-                    raise Exception("请求被拒绝(403) - IP被限制或Cookie过期")
+                    raise NonRetryableHTTPError("请求被拒绝(403) - IP被限制或Cookie过期")
                 
                 if response.status_code == 404:
-                    raise Exception("资源不存在(404)")
+                    raise NonRetryableHTTPError("资源不存在(404)")
                 
                 if response.status_code == 429:
-                    raise Exception("请求过于频繁(429) - 被限流")
+                    raise RetryableHTTPError("请求过于频繁(429) - 被限流")
                 
                 response.raise_for_status()
                 
@@ -159,23 +170,28 @@ class BilibiliCrawler:
                             # 成功
                             return response
                         elif code == -412:
-                            raise Exception(f"请求被限流({code}) - {message}")
+                            raise RetryableHTTPError(f"请求被限流({code}) - {message}")
                         elif code == -4:
-                            raise Exception(f"未登录或权限不足({code}) - {message}")
+                            raise NonRetryableHTTPError(f"未登录或权限不足({code}) - {message}")
                         elif code == -401:
-                            raise Exception(f"Cookie过期({code}) - {message}")
+                            raise NonRetryableHTTPError(f"Cookie过期({code}) - {message}")
                         elif code == -403:
-                            raise Exception(f"无权限访问({code}) - {message}")
+                            raise NonRetryableHTTPError(f"无权限访问({code}) - {message}")
                         elif code == -404:
-                            raise Exception(f"资源不存在({code}) - {message}")
+                            raise NonRetryableHTTPError(f"资源不存在({code}) - {message}")
                         else:
-                            raise Exception(f"API错误({code}) - {message}")
+                            raise NonRetryableHTTPError(f"API错误({code}) - {message}")
                 except (ValueError, KeyError, TypeError):
                     # 不是JSON响应或不包含code字段，直接返回
                     return response
                 
                 return response
                 
+            except NonRetryableHTTPError:
+                # 确定性客户端错误：重试不会改变结果，立即失败，
+                # 避免无谓的退避等待（每次 2~5 秒）与对封禁状态的加重。
+                raise
+
             except requests.exceptions.Timeout:
                 self.logger.warning(f"⏱ 请求超时 (第 {attempt + 1}/{max_retries} 次)")
                 if attempt == max_retries - 1:
