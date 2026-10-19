@@ -25,6 +25,51 @@ class RetryableHTTPError(Exception):
     """可重试的错误：限流类（HTTP 429 / API -412）。退避后重试是正确应对。"""
 
 
+def _evaluate_response(response) -> None:
+    """对一个已收到的响应做「成功 / 不可重试 / 可重试」判定。
+
+    抽成与 ``requests`` 调用解耦的纯函数：只依赖 duck-typed 的
+    ``status_code`` / ``json()`` / ``raise_for_status()``，因此可以离线单测
+    （无需真正发出网络请求）。判定规则与历史行为完全一致：
+
+    - HTTP 403 / 404、API code -4 / -401 / -403 / -404 → ``NonRetryableHTTPError``
+      （确定性客户端错误，重试无意义，应立即失败）
+    - HTTP 429、API code -412 → ``RetryableHTTPError``（限流，退避重试是正确应对）
+    - 其他 2xx 且 code == 0，或非 JSON / 无 code 字段 → 视为成功，返回 ``None``
+    """
+    if response.status_code == 403:
+        raise NonRetryableHTTPError("请求被拒绝(403) - IP被限制或Cookie过期")
+    if response.status_code == 404:
+        raise NonRetryableHTTPError("资源不存在(404)")
+    if response.status_code == 429:
+        raise RetryableHTTPError("请求过于频繁(429) - 被限流")
+
+    response.raise_for_status()
+
+    try:
+        data = response.json()
+        if isinstance(data, dict) and 'code' in data:
+            code = data.get('code')
+            message = data.get('message', '未知错误')
+
+            if code == 0:
+                return
+            if code == -412:
+                raise RetryableHTTPError(f"请求被限流({code}) - {message}")
+            if code == -4:
+                raise NonRetryableHTTPError(f"未登录或权限不足({code}) - {message}")
+            if code == -401:
+                raise NonRetryableHTTPError(f"Cookie过期({code}) - {message}")
+            if code == -403:
+                raise NonRetryableHTTPError(f"无权限访问({code}) - {message}")
+            if code == -404:
+                raise NonRetryableHTTPError(f"资源不存在({code}) - {message}")
+            raise NonRetryableHTTPError(f"API错误({code}) - {message}")
+    except (ValueError, KeyError, TypeError):
+        # 不是 JSON 响应或不包含 code 字段，按成功处理
+        return
+
+
 class BilibiliCrawler:
     """B站视频爬虫类 - 支持现代反爬虫机制"""
     
@@ -93,7 +138,7 @@ class BilibiliCrawler:
         
         return session
     
-    def _make_request(self, url: str, method: str = 'GET', params: Dict = None, **kwargs) -> requests.Response:
+    def _make_request(self, url: str, method: str = 'GET', params: Optional[Dict] = None, **kwargs) -> requests.Response:
         """
         发送请求，带重试机制和WBI签名
         
@@ -147,44 +192,9 @@ class BilibiliCrawler:
                         **kwargs
                     )
                 
-                # 检查HTTP状态码
-                if response.status_code == 403:
-                    raise NonRetryableHTTPError("请求被拒绝(403) - IP被限制或Cookie过期")
-                
-                if response.status_code == 404:
-                    raise NonRetryableHTTPError("资源不存在(404)")
-                
-                if response.status_code == 429:
-                    raise RetryableHTTPError("请求过于频繁(429) - 被限流")
-                
-                response.raise_for_status()
-                
-                # 检查API响应
-                try:
-                    data = response.json()
-                    if isinstance(data, dict) and 'code' in data:
-                        code = data.get('code')
-                        message = data.get('message', '未知错误')
-                        
-                        if code == 0:
-                            # 成功
-                            return response
-                        elif code == -412:
-                            raise RetryableHTTPError(f"请求被限流({code}) - {message}")
-                        elif code == -4:
-                            raise NonRetryableHTTPError(f"未登录或权限不足({code}) - {message}")
-                        elif code == -401:
-                            raise NonRetryableHTTPError(f"Cookie过期({code}) - {message}")
-                        elif code == -403:
-                            raise NonRetryableHTTPError(f"无权限访问({code}) - {message}")
-                        elif code == -404:
-                            raise NonRetryableHTTPError(f"资源不存在({code}) - {message}")
-                        else:
-                            raise NonRetryableHTTPError(f"API错误({code}) - {message}")
-                except (ValueError, KeyError, TypeError):
-                    # 不是JSON响应或不包含code字段，直接返回
-                    return response
-                
+                # 状态码与 API 返回码判定：抽为纯函数，便于离线单测（见
+                # tests/test_response_eval.py）；判定逻辑本身不变。
+                _evaluate_response(response)
                 return response
                 
             except NonRetryableHTTPError:
@@ -272,7 +282,7 @@ class BilibiliCrawler:
             self.logger.error(f"❌ 获取视频信息失败: {str(e)}")
             return None
     
-    def download_video(self, bvid: str, output_dir: str = None) -> bool:
+    def download_video(self, bvid: str, output_dir: Optional[str] = None) -> bool:
         """下载视频"""
         output_dir = output_dir or self.config.get('download_dir')
         Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -395,7 +405,7 @@ class BilibiliCrawler:
                 self.logger.debug("保存失败记录时出错（可忽略）：%s", db_err)
             return False
     
-    def batch_download(self, bv_list: List[str], output_dir: str = None) -> Tuple[int, int]:
+    def batch_download(self, bv_list: List[str], output_dir: Optional[str] = None) -> Tuple[int, int]:
         """批量下载视频"""
         output_dir = output_dir or self.config.get('download_dir')
         
